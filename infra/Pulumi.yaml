@@ -1,0 +1,3 @@
+name: lambda-s3-go
+runtime: go
+description: Lambda S3 Go Thumbnailer
