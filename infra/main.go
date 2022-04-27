@@ -17,6 +17,42 @@ type PulumiConfig struct {
 	LambdaName       string
 }
 
+const (
+	policy = `{
+  "Statement": [
+    {
+      "Action": [
+        "logs:PutLogEvents",
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream"
+      ],
+      "Effect": "Allow",
+      "Resource": "arn:aws:logs:*:*:*"
+    },
+    {
+      "Action": [
+        "s3:GetObject"
+      ],
+      "Effect": "Allow",
+      "Resource": "arn:aws:s3:::%s/*"
+    }
+  ],
+  "Version": "2012-10-17"
+}`
+	assumeRolePolicy = `{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "lambda.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}`
+)
+
 func getConfig(ctx *pulumi.Context) PulumiConfig {
 	var pulumiConfig PulumiConfig
 
@@ -39,27 +75,6 @@ func main() {
 			return err
 		}
 
-		policy := `{
-  "Statement": [
-    {
-      "Action": [
-        "logs:PutLogEvents",
-        "logs:CreateLogGroup",
-        "logs:CreateLogStream"
-      ],
-      "Effect": "Allow",
-      "Resource": "arn:aws:logs:*:*:*"
-    },
-    {
-      "Action": [
-        "s3:GetObject"
-      ],
-      "Effect": "Allow",
-      "Resource": "arn:aws:s3:::%s/*"
-    }
-  ],
-  "Version": "2012-10-17"
-}`
 		awsLambdaS3Policy, err := iam.NewPolicy(ctx, pcfg.AwsPolicyName, &iam.PolicyArgs{
 			Policy: pulumi.Any(fmt.Sprintf(policy, pcfg.BucketBaseName)),
 		})
@@ -67,18 +82,6 @@ func main() {
 			return err
 		}
 
-		assumeRolePolicy := `{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": {
-        "Service": "lambda.amazonaws.com"
-      },
-      "Action": "sts:AssumeRole"
-    }
-  ]
-}`
 		lambdaRole, err := iam.NewRole(ctx, pcfg.LambdaS3RoleName, &iam.RoleArgs{
 			AssumeRolePolicy:  pulumi.Any(assumeRolePolicy),
 			InlinePolicies:    iam.RoleInlinePolicyArray{nil},
@@ -94,7 +97,7 @@ func main() {
 			Runtime: pulumi.String("go1.x"),
 			Code:    pulumi.NewFileArchive("../lambda/handler.zip"),
 			Architectures: pulumi.StringArray{
-				pulumi.String("arm64"),
+				pulumi.String("x86_64"),
 			},
 			Timeout: pulumi.Int(10),
 			TracingConfig: &lambda.FunctionTracingConfigArgs{
