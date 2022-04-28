@@ -57,7 +57,7 @@ func getConfig(ctx *pulumi.Context) PulumiConfig {
 	var pulumiConfig PulumiConfig
 
 	cfg := config.New(ctx, "")
-	cfg.RequireObject("thumbnailer", &pulumiConfig)
+	cfg.RequireObject("testlambda", &pulumiConfig)
 
 	return pulumiConfig
 }
@@ -68,7 +68,6 @@ func main() {
 		pcfg := getConfig(ctx)
 
 		sourceBucket, err := s3.NewBucket(ctx, pcfg.BucketBaseName, &s3.BucketArgs{
-			HostedZoneId: pulumi.String("Z21DNDUVLTQW6Q"),
 			ForceDestroy: pulumi.Bool(true),
 		})
 		if err != nil {
@@ -91,11 +90,11 @@ func main() {
 			return err
 		}
 
-		createThumbnailLambda, err := lambda.NewFunction(ctx, pcfg.LambdaName, &lambda.FunctionArgs{
+		testLambda, err := lambda.NewFunction(ctx, pcfg.LambdaName, &lambda.FunctionArgs{
 			Handler: pulumi.String("handler"),
 			Role:    lambdaRole.Arn,
 			Runtime: pulumi.String("go1.x"),
-			Code:    pulumi.NewFileArchive("../lambda/handler.zip"),
+			Code:    pulumi.NewFileArchive("../testlambda/testlambda.zip"),
 			Architectures: pulumi.StringArray{
 				pulumi.String("x86_64"),
 			},
@@ -110,7 +109,7 @@ func main() {
 
 		allowBucketToInvokeF, err := lambda.NewPermission(ctx, "pulumiAllowBucketToInvokeF", &lambda.PermissionArgs{
 			Action:    pulumi.String("lambda:InvokeFunction"),
-			Function:  createThumbnailLambda.Arn,
+			Function:  testLambda.Arn,
 			Principal: pulumi.String("s3.amazonaws.com"),
 			SourceArn: sourceBucket.Arn,
 		})
@@ -122,7 +121,7 @@ func main() {
 			Bucket: sourceBucket.ID(),
 			LambdaFunctions: s3.BucketNotificationLambdaFunctionArray{
 				&s3.BucketNotificationLambdaFunctionArgs{
-					LambdaFunctionArn: createThumbnailLambda.Arn,
+					LambdaFunctionArn: testLambda.Arn,
 					Events: pulumi.StringArray{
 						pulumi.String("s3:ObjectCreated:*"),
 					},

@@ -1,6 +1,6 @@
 config:
   aws:region: eu-central-1
-  lambda-s3-go:thumbnailer:
+  lambda-s3-go:testlambda:
     awsPolicyName: p-lambda-s3-go-policy
     bucketBaseName: p-lambda-s3-go
     lambdaName: p-lambda-s3-function
