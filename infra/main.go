@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 
+	"github.com/pulumi/pulumi-aws/sdk/v5/go/aws/cloudwatch"
 	"github.com/pulumi/pulumi-aws/sdk/v5/go/aws/iam"
 	"github.com/pulumi/pulumi-aws/sdk/v5/go/aws/lambda"
 	"github.com/pulumi/pulumi-aws/sdk/v5/go/aws/s3"
@@ -66,6 +67,7 @@ func main() {
 	pulumi.Run(func(ctx *pulumi.Context) error {
 
 		pcfg := getConfig(ctx)
+		lambdaName := fmt.Sprintf("%s-%s-%s", pcfg.LambdaName, ctx.Project(), ctx.Stack())
 
 		sourceBucket, err := s3.NewBucket(ctx, pcfg.BucketBaseName, &s3.BucketArgs{
 			ForceDestroy: pulumi.Bool(true),
@@ -90,22 +92,34 @@ func main() {
 			return err
 		}
 
-		testLambda, err := lambda.NewFunction(ctx, pcfg.LambdaName, &lambda.FunctionArgs{
-			Handler: pulumi.String("handler"),
-			Role:    lambdaRole.Arn,
-			Runtime: pulumi.String("go1.x"),
-			Code:    pulumi.NewFileArchive("../testlambda/testlambda.zip"),
-			Architectures: pulumi.StringArray{
-				pulumi.String("x86_64"),
-			},
-			Timeout: pulumi.Int(10),
-			TracingConfig: &lambda.FunctionTracingConfigArgs{
-				Mode: pulumi.String("PassThrough"),
-			},
-		}, pulumi.Protect(false))
+		// Creat Lambda with log group, archive and the function itself:
+		logGroup, err := cloudwatch.NewLogGroup(ctx, pcfg.LambdaName, &cloudwatch.LogGroupArgs{
+			Name:            pulumi.String("/aws/lambda/" + lambdaName),
+			RetentionInDays: pulumi.Int(3),
+		})
 		if err != nil {
 			return err
 		}
+		codeArchive := pulumi.NewAssetArchive(map[string]interface{}{
+			"bootstrap": pulumi.NewFileAsset("../testlambda/armhandler"),
+		})
+
+		testLambda, err := lambda.NewFunction(ctx, lambdaName, &lambda.FunctionArgs{
+			Name:          pulumi.String(lambdaName),
+			Handler:       pulumi.String("bootstrap"),
+			Role:          lambdaRole.Arn,
+			Runtime:       pulumi.String("provided.al2"),
+			Code:          codeArchive,
+			Timeout:       pulumi.Int(2),
+			Architectures: pulumi.StringArray{pulumi.String("arm64")},
+			TracingConfig: &lambda.FunctionTracingConfigArgs{
+				Mode: pulumi.String("PassThrough"),
+			},
+		}, pulumi.DependsOn([]pulumi.Resource{lambdaRole, logGroup}))
+		if err != nil {
+			return err
+		}
+		// end of lambda creation
 
 		allowBucketToInvokeF, err := lambda.NewPermission(ctx, "pulumiAllowBucketToInvokeF", &lambda.PermissionArgs{
 			Action:    pulumi.String("lambda:InvokeFunction"),
@@ -131,6 +145,9 @@ func main() {
 		if err != nil {
 			return err
 		}
+
+		ctx.Export("lambdaName", pulumi.String(lambdaName))
+		ctx.Export("lambda", testLambda.Arn)
 
 		return nil
 	})
